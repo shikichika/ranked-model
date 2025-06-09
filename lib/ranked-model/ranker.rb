@@ -188,9 +188,34 @@ module RankedModel
             where( instance_class.arel_table[ranker.column].lteq(rank) ).
             update_all( %Q{#{ranker.column} = #{ranker.column} - 1} )
         elsif current_last.rank && current_last.rank < (RankedModel::MAX_RANK_VALUE - 1) && rank < current_last.rank
-          _scope.
-            where( instance_class.arel_table[ranker.column].gteq(rank) ).
-            update_all( %Q{#{ranker.column} = #{ranker.column} + 1} )
+          ids = []
+          prev_rank = nil
+          batch_size = 500
+          offset = 0
+          finished = false
+          while !finished
+            batch = _scope
+              .where(instance_class.arel_table[ranker.column].gteq(prev_rank ? prev_rank + 1 : rank))
+              .order(ranker.column)
+              .offset(offset)
+              .limit(batch_size)
+              .pluck(instance_class.primary_key, ranker.column)
+            break if batch.empty?
+
+            batch.each do |record|
+              current_rank = record[1]
+              if prev_rank && current_rank - prev_rank > 1
+                finished = true
+                break
+              end
+              ids << record[0]
+              prev_rank = current_rank
+            end
+            offset += batch_size
+          end
+          if ids.any?
+            _scope.where(instance_class.primary_key => ids).update_all("#{ranker.column} = #{ranker.column} + 1")
+          end
         elsif current_first.rank && current_first.rank > RankedModel::MIN_RANK_VALUE && rank > current_first.rank
           _scope.
             where( instance_class.arel_table[ranker.column].lt(rank) ).
