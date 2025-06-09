@@ -190,29 +190,19 @@ module RankedModel
         elsif current_last.rank && current_last.rank < (RankedModel::MAX_RANK_VALUE - 1) && rank < current_last.rank
           ids = []
           prev_rank = nil
-          batch_size = 500
-          offset = 0
-          finished = false
-          while !finished
-            batch = _scope
-              .where(instance_class.arel_table[ranker.column].gteq(prev_rank ? prev_rank + 1 : rank))
-              .order(ranker.column)
-              .offset(offset)
-              .limit(batch_size)
-              .pluck(instance_class.primary_key, ranker.column)
-            break if batch.empty?
-
-            batch.each do |record|
-              current_rank = record[1]
-              if prev_rank && current_rank - prev_rank > 1
-                finished = true
-                break
+          _scope
+            .where(instance_class.arel_table[ranker.column].gteq(prev_rank ? prev_rank + 1 : rank))
+            .order(ranker.column)
+            .in_batches(of: 500) do |batch|
+              batch.pluck(instance_class.primary_key, ranker.column).each do |record|
+                current_rank = record[1]
+                if prev_rank && current_rank - prev_rank > 1
+                  break
+                end
+                ids << record[0]
+                prev_rank = current_rank
               end
-              ids << record[0]
-              prev_rank = current_rank
             end
-            offset += batch_size
-          end
           if ids.any?
             _scope.where(instance_class.primary_key => ids).update_all("#{ranker.column} = #{ranker.column} + 1")
           end
