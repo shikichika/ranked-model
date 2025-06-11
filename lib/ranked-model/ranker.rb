@@ -191,7 +191,7 @@ module RankedModel
           ids = []
           prev_rank = nil
           _scope
-            .where(instance_class.arel_table[ranker.column].gteq(prev_rank ? prev_rank + 1 : rank))
+            .where(instance_class.arel_table[ranker.column].gteq(rank))
             .order(ranker.column)
             .in_batches(of: 500) do |batch|
               batch.pluck(instance_class.primary_key, ranker.column).each do |record|
