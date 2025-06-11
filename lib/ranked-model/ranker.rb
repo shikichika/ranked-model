@@ -194,12 +194,10 @@ module RankedModel
             .where(instance_class.arel_table[ranker.column].gteq(rank))
             .order(ranker.column)
             .in_batches(of: 500) do |batch|
-              batch.pluck(instance_class.primary_key, ranker.column).each do |record|
-                current_rank = record[1]
-                if prev_rank && current_rank - prev_rank > 1
-                  break
-                end
-                ids << record[0]
+              batch.pluck(instance_class.primary_key, ranker.column).each do |id, current_rank|
+                break if prev_rank && current_rank - prev_rank > 1
+
+                ids << id
                 prev_rank = current_rank
               end
             end
