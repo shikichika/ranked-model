@@ -187,10 +187,42 @@ module RankedModel
           _scope.
             where( instance_class.arel_table[ranker.column].lteq(rank) ).
             update_all( %Q{#{ranker.column} = #{ranker.column} - 1} )
+        # preferred_spread がある場合、数値を下げる方を優先する
+        elsif ranker.preferred_spread && current_first.rank && current_first.rank > RankedModel::MIN_RANK_VALUE && rank > current_first.rank
+          ids = []
+          prev_rank = nil
+          _scope
+            .where(instance_class.arel_table[ranker.column].lt(rank))
+            .order(instance_class.arel_table[ranker.column].desc)
+            .in_batches(of: 500) do |batch|
+              batch.pluck(instance_class.primary_key, ranker.column).each do |id, current_rank|
+                break if prev_rank && prev_rank - current_rank > 1
+
+                ids << id
+                prev_rank = current_rank
+              end
+            end
+          if ids.any?
+            _scope.where(instance_class.primary_key => ids).update_all("#{ranker.column} = #{ranker.column} - 1")
+          end
+          rank_at(rank - 1)
         elsif current_last.rank && current_last.rank < (RankedModel::MAX_RANK_VALUE - 1) && rank < current_last.rank
-          _scope.
-            where( instance_class.arel_table[ranker.column].gteq(rank) ).
-            update_all( %Q{#{ranker.column} = #{ranker.column} + 1} )
+          ids = []
+          prev_rank = nil
+          _scope
+            .where(instance_class.arel_table[ranker.column].gteq(rank))
+            .order(ranker.column)
+            .in_batches(of: 500) do |batch|
+              batch.pluck(instance_class.primary_key, ranker.column).each do |id, current_rank|
+                break if prev_rank && current_rank - prev_rank > 1
+
+                ids << id
+                prev_rank = current_rank
+              end
+            end
+          if ids.any?
+            _scope.where(instance_class.primary_key => ids).update_all("#{ranker.column} = #{ranker.column} + 1")
+          end
         elsif current_first.rank && current_first.rank > RankedModel::MIN_RANK_VALUE && rank > current_first.rank
           _scope.
             where( instance_class.arel_table[ranker.column].lt(rank) ).
